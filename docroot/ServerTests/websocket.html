@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang='en'>
+  <head>
+    <title>3D Slicer Web Server Experiments</title>
+    <meta content='width=device-width, initial-scale=1' name='viewport'>
+    <link href='../stylesheets/application.css' rel='stylesheet'>
+    <script src='https://code.jquery.com/jquery-2.0.3.min.js'></script>
+  </head>
+  <body>
+        <div id='slicer_header'>
+          <img src='../images/3DSlicer-DesktopIcon.png'>
+          <span class='text'>
+            <span class='gray'>3D Slicer</span> Web Server Experiments
+          </span>
+        </div>
+      
+        <ul>
+<h3>WebSocket Demo</h3>
+
+
+
+<div class="UI">
+  <p id="demoview" align="center">
+    <img id="ItemPreview" src="" style="display: block;
+        margin-left: auto;
+        margin-right: auto;
+        width: 40%;">
+  </p>
+  <div class="slidecontainer" style="width: 40%; margin-left: auto; margin-right: auto">
+    <input type="range" min="1" max="100" value="50" class="slider" style="display: block;
+    margin : 0 auto; background: #B60F0F;" id="rSlider" align="center">
+    <button type="button" onclick="redWSS()" style="display: block;
+    margin : 0 auto;"> red </button>
+  </div>
+  <div class="slidecontainer" style="width: 40%; margin-left: auto; margin-right: auto">
+    <input type="range" min="1" max="100" value="50" class="slider"  style="display: block;
+    margin : 0 auto;"id="gSlider" align="center">
+    <button type="button" onclick="greenWSS()" style="display: block;
+    margin : 0 auto;"> green </button>
+  </div>
+  <div class="slidecontainer" style="width: 40%; margin-left: auto; margin-right: auto">
+    <input type="range" min="1" max="100" value="50" class="slider" style="display: block;
+    margin : 0 auto;"id="ySlider" align="center">
+    <button type="button" onclick="yellowWSS()" style="display: block;
+    margin : 0 auto;"> yellow </button>
+  </div>
+
+</div>
+<h4>
+  3D views
+  <button type="button" onclick="lookTop()"> top </button>
+  <button type="button" onclick="lookBottom()"> bottom </button>
+  <button type="button" onclick="lookFront()"> front </button>
+  <button type="button" onclick="lookBack()"> back </button>
+  <button type="button" onclick="lookLeft()"> left </button>
+  <button type="button" onclick="lookRight()"> right </button>
+</h4>
+
+
+<script>
+
+let socket = new WebSocket("ws://127.0.0.1:2016/websocket");
+
+var ySlider = document.getElementById("ySlider");
+var rSlider = document.getElementById("rSlider");
+var gSlider = document.getElementById("gSlider");
+var yVal = 0;
+var rVal = 0;
+var gVal = 0;
+
+socket.onopen = function(e) {
+    alert("connection establised");
+    socket.send("slicer/slice")
+    //socket.send("connection established");
+};
+
+socket.onmessage = function(event) {
+
+  img = event.data;
+  let reader = new FileReader();
+  reader.readAsDataURL(img); // converts the blob to base64 and calls onload
+  reader.onload = function() {
+    var base64 = reader.result
+    console.log(base64)
+    var imgBase64 = base64.split(',')[1];
+    document.getElementById("ItemPreview").src = "data:image/png;base64," + imgBase64;
+  };
+
+};
+
+function yellowWSS() {
+    socket.send("slicer/slice?view=yellow");
+};
+
+ySlider.oninput = function() {
+  socket.send("slicer/slice?view=yellow&scrollTo=" + (this.value / 100));
+}
+
+function redWSS() {
+    socket.send("slicer/slice?view=red");
+};
+
+rSlider.oninput = function() {
+  socket.send("slicer/slice?view=red&scrollTo=" + (this.value / 100));
+}
+
+function greenWSS() {
+    socket.send("slicer/slice?view=green");
+};
+
+gSlider.oninput = function() {
+  socket.send("slicer/slice?view=green&scrollTo=" + (this.value / 100));
+}
+
+function lookLeft() {
+    socket.send("slicer/threeD?lookFromAxis=left");
+};
+function lookRight() {
+    socket.send("slicer/threeD?lookFromAxis=right");
+};
+function lookTop() {
+    socket.send("slicer/threeD?lookFromAxis=ssss");
+};
+function lookBottom() {
+    socket.send("slicer/threeD?lookFromAxis=iiii");
+};
+function lookFront() {
+    socket.send("slicer/threeD?lookFromAxis=aaaa");
+};
+function lookBack() {
+    socket.send("slicer/threeD?lookFromAxis=pppp");
+};
+
+socket.onerror = function(error) {
+  alert(`[error] ${error.message}`);
+};
+
+</script>
+
+</body>
+</html> 

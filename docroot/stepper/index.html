@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+  <title>STEPPER - WebGL2 </title>
+
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/DicomMetaDictionary.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/BufferStream.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/ValueRepresentation.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/Tag.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/DicomMessage.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/normalizers.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/derivations.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/dcmio/colors.js"></script>
+
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/js/gl-matrix-min.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/js/pouchdb-5.1.0.js"></script>
+
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/linear.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/field.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/fiducial.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/pixel.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/image.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/transform.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/fields/segmentation.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/view.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/generators.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/renderer.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/gaussian.js"></script>
+  <script type="text/javascript" src="http://pieper.github.io/sites/step/rasterizer.js"></script>
+
+  <script type="text/javascript" src="stepper/bilateral.js"></script>
+  <script type="text/javascript" src="stepper/growcut.js"></script>
+
+</head>
+
+<body>
+
+<canvas id="renderCanvas"></canvas>
+
+<script>
+'use strict'
+
+function testREPL() {
+
+  let paramURL = "slicer/repl?source=print('message from a parameter')";
+  let paramRequest = new XMLHttpRequest();
+  paramRequest.responseType = "";
+  paramRequest.onload = function (event) {
+    console.log('parameter response', paramRequest.response);
+  };
+  paramRequest.open("GET", paramURL, true);
+  paramRequest.send(null);
+
+  let bodyURL = "slicer/repl";
+  let bodyRequest = new XMLHttpRequest();
+  bodyRequest.responseType = "";
+  bodyRequest.onload = function (event) {
+    console.log('post response', bodyRequest.response);
+  };
+  bodyRequest.open("POST", bodyURL, true);
+  let source = "print('message from a POST')"
+  bodyRequest.send(stringToUint8Array(source));
+  step.bodyRequest = bodyRequest;
+}
+
+function testOperations(operationsDB) {
+
+  let filterOperationsDoc = {
+    type: "ch.step",
+    status: "open",
+    desiredProvenance: {
+      application: "stepper",
+      operation: "filter",
+      inputData: {
+        type: 'bilateral',
+        url: "http://localhost:2016/slicer/volume?id=MRHead"
+      },
+      outputData: {
+        url: "http://localhost:2016/slicer/volume?id=MRHead-filtered"
+      },
+    }
+  };
+
+  let growcutOperationsDoc = {
+    type: "ch.step",
+    status: "open",
+    desiredProvenance: {
+      application: "stepper",
+      operation: "growcut",
+      inputData: {
+        iterations: 500,
+        backgroundURL: "http://localhost:2016/slicer/volume?id=MRHead",
+        labelMapURL: "http://localhost:2016/slicer/volume?id=MRHead-label"
+      },
+      outputData: {
+        url: "http://localhost:2016/slicer/volume?id=MRHead-label-growcut"
+      },
+    }
+  };
+
+  operationsDB.post(growcutOperationsDoc);
+}
+
+
+function performImageFilter( generator ) {
+  let filterField = step.renderer.inputFields[step.renderer.inputFields.length-1];
+  if (!filterField || filterField.constructor.name != "ImageField") {
+    alert('Need to load an image field');
+    return;
+  }
+
+  let derivedImage = new DerivedImage([filterField.dataset]);
+  let derivedField0 = Field.fromDataset(derivedImage.dataset)[0];
+
+  // override default calculation
+  derivedField0.windowCenter = filterField.windowCenter;
+  derivedField0.windowWidth = filterField.windowWidth;
+  derivedField0.generatedPixelData = derivedField0.dataset.PixelData;
+
+  step.renderer.inputFields = [filterField, derivedField0];
+  step.renderer.updateProgram();
+
+  step.generator = new generator({
+    gl: step.renderer.gl,
+    inputFields: [filterField],
+    outputFields: [derivedField0],
+  });
+
+  step.generator.gl = step.renderer.gl;
+  step.generator.inputFields = [filterField];
+  step.generator.outputFields = [derivedField0];
+
+  step.generator.updateProgram();
+
+  console.log(`image filtering`);
+  step.generator.generate();
+  step.renderer._render();
+  filterField.visible = 0;
+  derivedField0.visible = 1;
+  step.renderer.requestRender(step.view);
+}
+
+function performGaussian() {
+  performImageFilter(GaussianGenerator);
+}
+
+function performBilateral() {
+  performImageFilter(BilateralGenerator);
+}
+
+function performGrowCut(growCutGenerator, backgroundField, labelMapField, iterations) {
+
+  console.log('starting performGrowCut');
+  console.time('performGrowCut');
+
+  // create working buffers for strength and extra labelMap field
+  let derivedImage = new DerivedImage([backgroundField.dataset]);
+  let labelMapFields = [];
+  labelMapFields[0] = labelMapField;
+  labelMapFields[1] = Field.fromDataset(derivedImage.dataset)[0];
+  step.renderer.inputFields.push(labelMapFields[1]);
+  let strengthFields = [];
+  [0,1].forEach(index=>{
+    let strengthField = Field.fromDataset(derivedImage.dataset)[0];
+    strengthFields.push(strengthField);
+    step.renderer.inputFields.push(strengthField);
+  });
+  step.renderer.updateProgram();
+
+  // initialize generator
+  let inBuffer = 0;
+  let outBuffer = 1;
+  growCutGenerator.uniforms.iterations.value = iterations;
+  growCutGenerator.inputFields = [backgroundField,
+                                  labelMapFields[inBuffer],
+                                  strengthFields[inBuffer]];
+  growCutGenerator.outputFields = [labelMapFields[outBuffer],
+                                   strengthFields[outBuffer]];
+  growCutGenerator.updateProgram();
+
+  for (let iteration of Array(iterations).keys()) {
+    inBuffer = iteration%2;
+    outBuffer = (iteration+1)%2;
+    growCutGenerator.uniforms.iteration.value = iteration;
+    growCutGenerator.inputFields = [backgroundField,
+                                    labelMapFields[inBuffer],
+                                    strengthFields[inBuffer]];
+    growCutGenerator.outputFields = [labelMapFields[outBuffer],
+                                     strengthFields[outBuffer]];
+
+    // for the final iteration, save the label result to CPU
+    if (iteration == iterations-1) {
+      let outputField = growCutGenerator.outputFields[0];
+      let imageArray = new ArrayBuffer(outputField.dataset.PixelData.byteLength);
+      outputField.generatedPixelData = imageArray;
+    }
+
+    growCutGenerator.generate();
+
+    if (1+iteration == iterations) {
+      console.log(`Finished ${iterations} iterations`);
+      console.timeEnd('performGrowCut');
+    }
+  }
+}
+
+// TODO: avoid odd global used in fields and generators
+let USE_INT_TEXTURES = true;
+
+let step = {
+  options : {
+    newVolumeThreeD : false,
+  },
+  uniforms : {
+    pointLight: { type: '3fv', value: [100., -400., 1500.] },
+    gradientSize: { type: '1f', value: .01 },
+    rayMaxSteps: { type: '1i', value: 10000 },
+    sampleStep: { type: '1f', value: 0.1 },
+    renderCanvasWidth: { type: '1f', value: 512 },
+    renderCanvasHeight: { type: '1f', value: 512 },
+    sliceMode: { type: '1i', value: 1 },
+  },
+};
+
+
+//
+// nrrd helper functions
+// TODO: put in separate file
+//
+
+function stringToUint8Array(string) {
+  let array = new Uint8Array(string.length);
+  for (let index of Array(string.length).keys()) {
+    array[index] = string.charCodeAt(index);
+  }
+  return array;
+}
+
+function nrrdParse(nrrdArrayBuffer) {
+  // return the header fields and data
+  let newline = '\n'.charCodeAt(0); // value is 10
+  let header = "";
+  let dataOffset = 0;
+  let chars = new Uint8Array(nrrdArrayBuffer);
+  for (let index = 0; index < nrrdArrayBuffer.byteLength-1; index++) {
+    if (chars[index] == newline && chars[index+1] == newline) {
+      dataOffset = index + 2;
+      break;
+    }
+    header += String.fromCharCode(chars[index]);
+  }
+
+  let nrrd = {
+    header: {},
+    data: undefined,
+  };
+  header.split('\n').forEach(line => {
+    let [key, value] = line.split(":");
+    if (value && key[0] != '#') {
+      nrrd.header[key] = value.trim();
+    }
+  });
+
+  step.nrrdArrayBuffer = nrrdArrayBuffer;
+  nrrd.data = new Int16Array(nrrdArrayBuffer.slice(dataOffset));
+  return (nrrd);
+}
+
+function nrrdUnparse(nrrd) {
+  // make an array buffer out of the nrrd
+
+  let nrrdHeader = `NRRD0004
+# Complete NRRD file format specification at:
+# http://teem.sourceforge.net/nrrd/format.html
+type: short
+dimension: 3
+space: left-posterior-superior
+sizes: ${nrrd.header['sizes']}
+space directions: ${nrrd.header['space directions']}
+kinds: domain domain domain
+endian: little
+encoding: raw
+space origin: ${nrrd.header['space origin']}
+
+`;
+  let headerBytes = stringToUint8Array(nrrdHeader);
+
+  // account for old header values in nrrd data buffer
+  let bufferSize = nrrd.data.buffer.byteLength;
+  let dataSize = nrrd.data.byteLength;
+  let dataBytes = new Uint8Array(nrrd.data.buffer, bufferSize-dataSize);
+
+  let unparsed = new Uint8Array(headerBytes.length + dataBytes.length);
+  unparsed.set(headerBytes);
+  unparsed.set(dataBytes, headerBytes.length);
+
+  return (unparsed.buffer);
+}
+
+function nrrdToDICOMDataset(nrrd) {
+  // make a rough conversion from nrrd to dicom
+  // by filling in only what is needed for filtering
+  // TODO: get valid data from nrrd for data type to pixel info
+
+  console.log('converting', nrrd);
+
+  let sizes = nrrd.header['sizes'].split(" ").map(Number);
+  let origin = nrrd.header['space origin'].replace('(','').replace(')','').split(",").map(Number);
+
+  let directions = [];
+  let directionParts = nrrd.header['space directions'].split(')').slice(0,3)
+  directionParts.forEach(directionPart => {
+    let part = directionPart.replace('(','').replace(')','').split(',').map(Number);
+    directions.push(part);
+  });
+
+  let spacings = [];
+  let unitDirections = [];
+  directions.forEach(d => {
+    let spacing = Math.sqrt( d[0]*d[0] + d[1]*d[1] + d[2]*d[2] );
+    let unitDirection = [d[0]/spacing, d[1]/spacing, d[2]/spacing];
+    spacings.push(spacing);
+    unitDirections.push(unitDirection);
+  });
+
+  let dataset = {
+    "SOPClass": "EnhancedCTImage",
+    "Columns": String(sizes[0]),
+    "Rows": String(sizes[1]),
+    "NumberOfFrames": String(sizes[2]),
+    "SamplesPerPixel": 1,
+    "BitsStored": 16,
+    "HighBit": 15,
+    "WindowCenter": [ "84" ],
+    "WindowWidth": [ "168" ],
+    "BitsAllocated": 16,
+    "PixelRepresentation": 1,
+    "RescaleSlope": "1",
+    "RescaleIntercept": "0",
+    "SharedFunctionalGroups": {
+      "PlaneOrientation": {
+        "ImageOrientationPatient": [
+          String(unitDirections[0][0]),
+          String(unitDirections[0][1]),
+          String(unitDirections[0][2]),
+          String(unitDirections[1][0]),
+          String(unitDirections[1][1]),
+          String(unitDirections[1][2])
+        ]
+      },
+      "PixelMeasures": {
+        "PixelSpacing": [ String(spacings[0]), String(spacings[1]) ],
+        "SpacingBetweenSlices": String(spacings[2])
+      },
+      "PixelValueTransformation": {
+        "RescaleIntercept": "0",
+        "RescaleSlope": "1",
+        "RescaleType": "US"
+      }
+    },
+    "PixelData": nrrd.data
+  };
+
+  dataset.PerFrameFunctionalGroups = [];
+  for (let frameIndex of Array(sizes[2]).keys()) {
+    dataset.PerFrameFunctionalGroups.push({
+      "PlanePosition": {
+        "ImagePositionPatient": [
+          String(origin[0] + frameIndex * directions[2][0]),
+          String(origin[1] + frameIndex * directions[2][1]),
+          String(origin[2] + frameIndex * directions[2][2])
+        ]
+      },
+    });
+  }
+
+  return(dataset);
+}
+
+function nrrdLinearMapPixels(nrrd, slope=1, intercept=0) {
+  for (let index = 0; index < nrrd.data.length; index++) {
+    nrrd.data[index] = slope * nrrd.data[index] + intercept;
+  }
+}
+
+function nrrdPerformFilter(nrrd) {
+  let dataset = nrrdToDICOMDataset(nrrd);
+  let field = Field.fromDataset(dataset)[0];
+  step.renderer.inputFields.push(field);
+  step.renderer.requestRender(step.view);
+  //performImageFilter(GaussianGenerator);
+  performImageFilter(BilateralGenerator);
+
+  // TODO: possibly changed nrrd header
+  nrrd.data = new Uint16Array(step.renderer.inputFields[1].generatedPixelData);
+}
+
+class OperationHandler {
+  constructor(payload) {
+    this.payload = payload;
+  }
+
+  getNRRD(url) {
+    return new Promise(function(resolve,reject) {
+      let getRequest = new XMLHttpRequest();
+      getRequest.responseType = "arraybuffer";
+      getRequest.onload = function (event) {
+        let nrrd = nrrdParse(event.target.response);
+        resolve(nrrd);
+      };
+      getRequest.onerror = function () {
+        reject({
+          status: this.status,
+          statusText: getRequest.statusText
+        });
+      };
+      getRequest.open("GET", url, true);
+      getRequest.send(null);
+    });
+  }
+
+  getInputData() {
+    throw "getInputData should be overridden by the extending class"
+  }
+
+  perform() {
+    throw "perform should be overridden by the extending class"
+  }
+
+  postOutputData() {
+    // single output nrrd n resultArrayBuffer to url
+    let payload = this.payload;
+    return new Promise(function(resolve,reject) {
+      let postRequest = new XMLHttpRequest();
+      postRequest.responseType = "json";
+      postRequest.onload = function (event) {
+        resolve(Date(), 'response', postRequest.response);
+      };
+      postRequest.onerror = function () {
+        reject({
+          status: this.status,
+          statusText: getRequest.statusText
+        });
+      };
+      postRequest.open("POST", payload.prov.outputData.url, true);
+      postRequest.send(new Uint8Array(payload.resultArrayBuffer));
+    });
+  }
+
+  handle() {
+    this.getInputData()
+    .then(this.perform.bind(this))
+    .then(this.postOutputData.bind(this))
+    .catch( error => {
+      console.log('Something went wrong...', error);
+    });
+    return(`${this.constructor.name} requested`);
+  }
+}
+
+class FilterHandler extends OperationHandler {
+
+  constructor(payload) {
+    super(payload);
+  }
+
+  getInputData() {
+    let self = this;
+    return new Promise(function(resolve,reject) {
+      self.getNRRD(self.payload.prov.inputData.url)
+      .then((nrrd) => {
+        self.payload.nrrd = nrrd;
+        resolve();
+      });
+    });
+  }
+
+  perform() {
+    let payload =  this.payload;
+    return new Promise(function(resolve,reject) {
+      if (payload.prov.inputData.type == 'bilateral') {
+        nrrdPerformFilter(payload.nrrd);
+      } else if (payload.prov.inputData.type == 'linearmap') {
+        nrrdLinearMapPixels(payload.nrrd, -1, 200 );
+      }
+      payload.resultArrayBuffer = nrrdUnparse(payload.nrrd);
+      resolve(payload);
+    });
+  }
+}
+
+class GrowCutHandler extends OperationHandler {
+
+  getInputData() {
+    // resolve when both nrrd datasets have arrived
+    let self = this;
+    return new Promise(function(resolve,reject) {
+      self.payload.backgroundNRRD = undefined;
+      self.payload.labelMapNRRD = undefined;
+      self.getNRRD(self.payload.prov.inputData.backgroundURL)
+      .then((nrrd) => {
+        self.payload.backgroundNRRD = nrrd;
+        if (self.payload.labelMapNRRD) {
+          resolve();
+        }
+      });
+      self.getNRRD(self.payload.prov.inputData.labelMapURL)
+      .then((nrrd) => {
+        self.payload.labelMapNRRD = nrrd;
+        if (self.payload.backgroundNRRD) {
+          resolve();
+        }
+      });
+    });
+  }
+
+  perform() {
+    let self = this;
+    return new Promise(function(resolve,reject) {
+      let backgroundDataset = nrrdToDICOMDataset(self.payload.backgroundNRRD);
+      let backgroundField = Field.fromDataset(backgroundDataset)[0];
+      step.renderer.inputFields.push(backgroundField);
+      let labelMapDataset = nrrdToDICOMDataset(self.payload.labelMapNRRD);
+      let labelMapField = Field.fromDataset(labelMapDataset)[0];
+      step.renderer.inputFields.push(labelMapField);
+      step.renderer.requestRender(step.view);
+
+      let iterations = self.payload.prov.inputData.iterations;
+      let growCutGenerator = new GrowCutGenerator({
+        gl: step.renderer.gl,
+      });
+      performGrowCut(growCutGenerator, backgroundField, labelMapField, iterations);
+
+      let result = growCutGenerator.outputFields[0].generatedPixelData;
+      self.payload.labelMapNRRD.data = new Uint16Array(result);
+      self.payload.resultArrayBuffer = nrrdUnparse(self.payload.labelMapNRRD);
+      resolve();
+    });
+  }
+}
+
+let operations = {
+  'filter': FilterHandler,
+  'growcut': GrowCutHandler,
+};
+
+function canHandleOperation(operation) {
+  let prov = operation.desiredProvenance;
+  if (operation.type == 'ch.step'
+      && operation.status == 'open'
+      && prov
+      && prov.application == "stepper"
+      && prov.operation in operations) {
+    return(true);
+  } else {
+    console.log(`Skipping step that doesn't apply`);
+    return(false);
+  }
+}
+
+function handleOperation(doc) {
+  let prov = doc.desiredProvenance;
+  let operation = prov.operation;
+  let handler = new operations[operation]({prov});
+  return(handler.handle());
+}
+
+// once document is loaded...
+window.onload = function () {
+
+  //
+  // renderer
+  //
+  let canvas = document.querySelector('#renderCanvas');
+  let gl = canvas.getContext('webgl2');
+
+  if (!gl) {
+    alert('No webgl2 context available');
+  }
+
+  step.renderer = new RayCastRenderer({
+    gl,
+    canvas,
+    uniforms: step.uniforms,
+    inputFields: [],
+  });
+  step.view = new View({
+    viewBoxMax : [250, 250, -250],
+    viewBoxMin : [-250, -250, -200],
+    viewPoint : [0., -400., 0.],
+    viewNormal : [0., 1., 0.],
+    viewUp : [0., 0., 1.],
+  });
+  step.renderer.updateProgram();
+  step.renderer._render(step.view);
+
+  window.addEventListener('resize', resizeEvent => {
+    renderCanvas.width = window.innerWidth;
+    renderCanvas.height = window.innerHeight;
+    step.uniforms.renderCanvasWidth.value = renderCanvas.width;
+    step.uniforms.renderCanvasHeight.value = renderCanvas.height;
+    if (step.renderer) {
+      step.renderer.requestRender(step.view);
+    }
+  });
+  window.dispatchEvent(new Event('resize'));
+
+  let onResize = function() {
+    renderCanvas.width = window.innerWidth;
+    renderCanvas.height = window.innerHeight;
+  }
+  onResize();
+  window.onresize = onResize;
+
+  //
+  // operations handling
+  //
+
+  step.operationsDB = new PouchDB('http://localhost:5984/operations');
+  step.operationsDB.changes({
+    live: true,
+    include_docs: true,
+    since: 'now',
+  }).on('change', (changeDoc) => {
+    if (canHandleOperation(changeDoc.doc)) {
+      changeDoc.doc.status = 'working'; // grab the request
+      step.operationsDB.put(changeDoc.doc)
+      .then(() => {
+        let desiredProvenance = changeDoc.doc.desiredProvenance;
+        let result = handleOperation(changeDoc.doc);
+        console.log(result);
+        step.operationsDB.get(changeDoc.doc._id)
+        .then((doc) => {
+          doc.status = 'closed';
+          doc.result = result;
+          step.operationsDB.put(doc)
+          .catch((error) => {
+            console.log('Could not put result to the operationsDB', error);
+          });
+        });
+      })
+      .catch((error) => {
+        console.log('Could not handle operation', error);
+      });
+    }
+  }).on('complete', (info) => {
+    console.log ('Database connection canceled', info);
+  }).on('error', (err) => {
+    console.log ('Database connection error', err);
+  });
+
+  /* for testing */
+  testREPL();
+  testOperations(step.operationsDB);
+
+}
+
+</script>
+
+<p>
+This demo uses <a href='https://www.khronos.org/registry/webgl/specs/latest/2.0/'>WebGL2</a>.  Not all devices and browsers are supported.  As of this writing only the latest Chrome Canary or Firefox Nightly will work.  <a href='https://www.khronos.org/webgl/wiki/Getting_a_WebGL_Implementation'>See this page for details.</a>
+</p>
+
+</body>
+</html>
