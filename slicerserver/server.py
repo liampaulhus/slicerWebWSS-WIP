@@ -39,7 +39,8 @@ class Server:
             # the StaticFileHandler only takes the path arg as a string, so we have to decode the byte string
             app = Application([(r"/websocket", SlicerWebSocketHandler),
                                (r"/slicer/(.*)", SlicerRequestHandler, {"logMessage": logMessage}),
-                               (r"/dicom", DICOMRequestHandler, {"logMessage": logMessage}),
+                               (r"/dicom(.*)", DICOMRequestHandler, {"logMessage": logMessage}),
+                               #(r"/dicom(.*)", DICOMRequestHandler),
                                (r"/(.*)", StaticFileHandler, {"path": docroot.decode("utf-8"), "default_filename": "index.html"})])
             #app = Application(handlers=[(r"/",SlicerWebSocketHandler)])
 

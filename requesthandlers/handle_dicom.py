@@ -1,7 +1,7 @@
 import pydicom
 from __main__ import slicer
 from slicer.ScriptedLoadableModule import *
-from tornado.web import RequestHandler
+
 
 try:
     import urlparse
@@ -13,21 +13,20 @@ except ImportError:
         urlparse = urllib.parse.urlparse
         parse_qs = urllib.parse.parse_qs
 
+from tornado.web import RequestHandler
 from requesthandlers import header_builder
 
 
 class DICOMRequestHandler(RequestHandler):
-    """
-    Implements the mapping between DICOMweb endpoints
-    and ctkDICOMDatabase api calls.
-    """
-    retrieveURLTag = pydicom.tag.Tag(0x00080190)
-    numberOfStudyRelatedSeriesTag = pydicom.tag.Tag(0x00200206)
-    numberOfStudyRelatedInstancesTag = pydicom.tag.Tag(0x00200208)
-
     def initilize(self, logMessage):
         self.logMessage = logMessage
         self.logMessage('Starting DICOMRequestHandler')
+        retrieveURLTag = pydicom.tag.Tag(0x00080190)
+        numberOfStudyRelatedSeriesTag = pydicom.tag.Tag(0x00200206)
+        numberOfStudyRelatedInstancesTag = pydicom.tag.Tag(0x00200208)
+        
+    #def initilize(self):
+    #    print("init")
 
     # TODO how do we test this?
     def get(self, arg):
@@ -40,12 +39,12 @@ class DICOMRequestHandler(RequestHandler):
     def handleDICOMRequest(cls, parsedURL, requestBody, logger=None):
         contentType = b'text/plain'
         responseBody = None
-        splitPath = parsedURL.path.split(b'/')
-        if len(splitPath) > 2 and splitPath[2].startswith(b"studies"):
+        splitPath = parsedURL.path.split('/')
+        if len(splitPath) > 2 and splitPath[2].startswith("studies"):
             if logger:
                 logger.logMessage('%s in handleStudies: handling studies' % type(logger).__name__)
             contentType, responseBody = cls.handleStudies(parsedURL, requestBody)
-        elif len(splitPath) > 2 and splitPath[2].startswith(b"series"):
+        elif len(splitPath) > 2 and splitPath[2].startswith("series"):
             pass
         else:
             if logger:
