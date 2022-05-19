@@ -36,6 +36,12 @@ class DICOMRequestHandler(RequestHandler):
         header_builder(responseBody, contentType, self)
         self.finish(responseBody)
 
+    def put(self, arg):
+        self.get(arg)
+
+    def post(self, arg):
+        self.get(arg)
+
     @classmethod
     def handleDICOMRequest(cls, parsedURL, requestBody, logger=None):
         contentType = b'text/plain'

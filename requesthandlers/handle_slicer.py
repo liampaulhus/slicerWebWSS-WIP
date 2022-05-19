@@ -35,6 +35,12 @@ class SlicerRequestHandler(RequestHandler):
         header_builder(responseBody, contentType, self)
         self.finish(responseBody)
 
+    def put(self, arg):
+        self.get(arg)
+
+    def post(self, arg):
+        self.get(arg)
+
     def registerOneTimeBuffers(self, buffers):
         """ This allows data to be made avalable for subsequent access
         at a specific endpoint by filename.  To avoid memory buildup
