@@ -50,8 +50,10 @@ Direct API access:
 
  http://localhost:2016/slicer/slice?view=yellow
  
- These endpoints are also available over websocket by connection to wss://localhost:2016/websocket, and communicating the remainder of the url 
+ These endpoints are also available over websocket by connection to wss://localhost:2016/websocket, and communicating the remainder of the url.
+ 
  for example: slicer/slice?view=yellow or slicer/mrml 
+ 
  most results will need to be decoded to be useful as they will be sent in binary format
 
 
