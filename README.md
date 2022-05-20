@@ -25,6 +25,9 @@ Go to the Servers->WebServer module tp load in the module
 
 Select Start Server to launch the web server. If a private key and certificate are provided in the auth folder the server will automatically start in HTTPS mode and use WSS communication.
 
+At the index page select WebSocket Demo to use the interactive WebSocket ui. a slice must be loaded into slicer. 
+There is also a latency tester provided. This can be used to check the latency of the connection by comparing the time in browser to the time in slicer when the request was received. 
+
 Access http://localhost:2016 or https://localhost:2016 with a web browser or alternatively use the static page launchers in the module.
 
 NOTE: In order to use WSS with a self signed certificate you must first navigate to the index static page and accept/import the certificate. Some browsers such as chrome will still refuse a WSS connection with a self signed certificate so you must make sure the following flag is enabled:
@@ -47,6 +50,7 @@ Direct API access:
  http://localhost:2016/slicer/slice?view=yellow
  
  These endpoints are also available over websocket by connection to wss://localhost:2016/websocket, and communicating the remainder of the url 
- for example: slicer/slice?view=yellow or slicer/mrml
+ for example: slicer/slice?view=yellow or slicer/mrml 
+ most results will need to be decoded to be useful as they will be sent in binary format
 
 
