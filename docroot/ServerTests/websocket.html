@@ -58,8 +58,19 @@
 
 
 <script>
+console.log(document.location.protocol);
 
-let socket = new WebSocket("wss://127.0.0.1:2016/websocket");
+if (document.location.protocol == 'https:'){
+  var socket = new WebSocket("wss://127.0.0.1:2016/websocket");
+} else {
+  var socket = new WebSocket("ws://127.0.0.1:2016/websocket");
+}
+
+socket.onopen = open();
+socket.onmessage = message();
+socket.onerror = error();
+
+
 
 var ySlider = document.getElementById("ySlider");
 var rSlider = document.getElementById("rSlider");
@@ -68,25 +79,36 @@ var yVal = 0;
 var rVal = 0;
 var gVal = 0;
 
-socket.onopen = function(e) {
-    alert("connection establised");
-    socket.send("slicer/slice")
-    //socket.send("connection established");
-};
-
-socket.onmessage = function(event) {
-
-  img = event.data;
-  let reader = new FileReader();
-  reader.readAsDataURL(img); // converts the blob to base64 and calls onload
-  reader.onload = function() {
-    var base64 = reader.result
-    console.log(base64)
-    var imgBase64 = base64.split(',')[1];
-    document.getElementById("ItemPreview").src = "data:image/png;base64," + imgBase64;
+function open(){
+  return function(e) {
+      alert("connection establised");
+      socket.send("slicer/slice")
+      //socket.send("connection established");
   };
+}
 
-};
+function message(){
+  return function(event) {
+    img = event.data;
+    let reader = new FileReader();
+    reader.readAsDataURL(img); // converts the blob to base64 and calls onload
+    reader.onload = function() {
+      var base64 = reader.result
+      console.log(base64)
+      var imgBase64 = base64.split(',')[1];
+      document.getElementById("ItemPreview").src = "data:image/png;base64," + imgBase64;
+    };
+
+  };
+}
+
+function error(){
+  return function(error) {
+    alert(`connection failed`);
+  };
+}
+
+
 
 function yellowWSS() {
     socket.send("slicer/slice?view=yellow");
@@ -131,9 +153,6 @@ function lookBack() {
     socket.send("slicer/threeD?lookFromAxis=pppp");
 };
 
-socket.onerror = function(error) {
-  alert(`[error] ${error.message}`);
-};
 
 </script>
 

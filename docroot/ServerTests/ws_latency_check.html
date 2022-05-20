@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang='en'>
+  <head>
+    <title>3D Slicer Web Server Experiments</title>
+    <meta content='width=device-width, initial-scale=1' name='viewport'>
+    <link href='../stylesheets/application.css' rel='stylesheet'>
+    <script src='https://code.jquery.com/jquery-2.0.3.min.js'></script>
+  </head>
+  <body>
+        <div id='slicer_header'>
+          <img src='../images/3DSlicer-DesktopIcon.png'>
+          <span class='text'>
+            <span class='gray'>3D Slicer</span> Web Server Experiments
+          </span>
+        </div>
+      
+        <ul>
+<h3>Latency Check</h3>
+
+
+
+<div class="UI">
+  <p> System time in Slicer: </p>
+  <p> <img id="ItemPreview" src=""> </p>
+  <p> System time in Browser: </p>
+  <p id='time'> time </p>
+</div>
+
+
+
+<script>
+
+if (document.location.protocol == 'https:'){
+  var socket = new WebSocket("wss://127.0.0.1:2016/websocket");
+} else {
+  var socket = new WebSocket("ws://127.0.0.1:2016/websocket");
+}
+
+
+socket.onopen = function(e) {
+    alert("connection establised");
+    socket.send("slicer/timeimage");
+    test();
+};
+
+socket.onmessage = function(event) {
+
+  img = event.data;
+  let reader = new FileReader();
+  reader.readAsDataURL(img); // converts the blob to base64 and calls onload
+  reader.onload = function() {
+    var base64 = reader.result
+    console.log(base64)
+    var imgBase64 = base64.split(',')[1];
+    document.getElementById("ItemPreview").src = "data:image/png;base64," + imgBase64;
+  };
+
+};
+
+function delay(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}
+
+async function test() {
+  const d = new Date();
+  while (true){
+    socket.send("slicer/timeimage");
+    const d = new Date();
+    time = d.getTime().toString();
+    time = time.substring(0, 10) + "." + time.substring(10);
+    document.getElementById("time").innerHTML = time;
+    await delay(1000);
+  }
+}
+
+
+
+socket.onerror = function(error) {
+  alert(`[error] ${error.message}`);
+};
+
+</script>
+
+</body>
+</html> 

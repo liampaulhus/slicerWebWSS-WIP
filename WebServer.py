@@ -30,6 +30,7 @@ from requesthandlers import *
 #
 # WebServer
 #
+secure = False;
 
 class WebServer:
     def __init__(self, parent):
@@ -184,7 +185,11 @@ class WebServerWidget(ScriptedLoadableModuleWidget):
         self.layout.addStretch(1)
 
     def openLocalConnection(self):
-        qt.QDesktopServices.openUrl(qt.QUrl('http://localhost:2016'))
+        global secure
+        if secure:
+            qt.QDesktopServices.openUrl(qt.QUrl('https://localhost:2016'))
+        else:
+            qt.QDesktopServices.openUrl(qt.QUrl('http://localhost:2016'))
 
     def openQtLocalConnection(self, url='http://localhost:2016'):
         self.webWidget = slicer.qSlicerWebWidget()
@@ -384,6 +389,7 @@ class WebServerLogic:
             print("Logic: " + arg)
 
     def start(self):
+        global secure
         from slicerserver import Server
         """Set up the server"""
         self.stop()
@@ -398,10 +404,12 @@ class WebServerLogic:
         
         ## TODO if keys are present run sercure, if not dont run
         try:
+            
             t = open(authpath + b"/cert.pem")
             t = open(authpath + b"/key.pem")
             certfile = authpath + b"/cert.pem"
             keyfile = authpath + b"/key.pem"
+            secure = True;
             t = None
             
         except FileNotFoundError:

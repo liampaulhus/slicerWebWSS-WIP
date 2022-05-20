@@ -53,7 +53,10 @@ class SlicerWebSocketHandler(WebSocketHandler):
             #print("writing to file?")
             #imgOut = open("img.png", 'wb')
             #imgOut.write(responseBody)
-            self.write_message(responseBody, True)
+            if responseBody != None:
+                self.write_message(responseBody, True)
+            else:
+                self.write_message("no response body")
         elif header == "dicom":
             index = message.find(" ")
             message = message.encode()
@@ -63,8 +66,12 @@ class SlicerWebSocketHandler(WebSocketHandler):
             else:
                 requestBody = message[index:]
                 request = urlparse.urlparse(message[:index])
+                #request = request.decode()
             contentType, responseBody = DICOMRequestHandler.handleDICOMRequest(request, requestBody, self)
-            self.write_message(responseBody, True)
+            if responseBody != None:
+                self.write_message(responseBody, True)
+            else:
+                self.write_message("no response body")
 
 
     def parseHeader(self, message):
@@ -128,7 +135,7 @@ class SlicerWebSocketHandler(WebSocketHandler):
             elif request.find('/preset') == 0:
                 responseBody = self.preset(request)
             elif request.find('/timeimage') == 0:
-                responseBody = self.timeimage(request)
+                responseBody = self.timeimage(request.encode())
                 contentType = b'image/png'
             elif request.find('/slice') == 0:
                 responseBody = self.slice(request)

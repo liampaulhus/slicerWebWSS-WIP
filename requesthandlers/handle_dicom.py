@@ -18,16 +18,16 @@ from requesthandlers import header_builder
 
 
 class DICOMRequestHandler(RequestHandler):
-    def initilize(self, logMessage):
+    
+    retrieveURLTag = pydicom.tag.Tag(0x00080190)
+    numberOfStudyRelatedSeriesTag = pydicom.tag.Tag(0x00200206)
+    numberOfStudyRelatedInstancesTag = pydicom.tag.Tag(0x00200208)
+
+    def initialize(self, logMessage):
         self.logMessage = logMessage
         self.logMessage('Starting DICOMRequestHandler')
-        retrieveURLTag = pydicom.tag.Tag(0x00080190)
-        numberOfStudyRelatedSeriesTag = pydicom.tag.Tag(0x00200206)
-        numberOfStudyRelatedInstancesTag = pydicom.tag.Tag(0x00200208)
         
-    #def initilize(self):
-    #    print("init")
-
+        
     # TODO how do we test this?
     def get(self, arg):
         print("Received DICOM request with path %s and body %s" % (self.request.path, self.request.body))
@@ -45,12 +45,15 @@ class DICOMRequestHandler(RequestHandler):
     def handleDICOMRequest(cls, parsedURL, requestBody, logger=None):
         contentType = b'text/plain'
         responseBody = None
-        splitPath = parsedURL.path.split('/')
-        if len(splitPath) > 2 and splitPath[2].startswith("studies"):
+        print(type(parsedURL))
+        if isinstance(parsedURL, urllib.parse.ParseResult):
+            parsedURL = parsedURL.encode()        
+        splitPath = parsedURL.path.split(b'/')
+        if len(splitPath) > 2 and splitPath[2].startswith(b"studies"):
             if logger:
                 logger.logMessage('%s in handleStudies: handling studies' % type(logger).__name__)
             contentType, responseBody = cls.handleStudies(parsedURL, requestBody)
-        elif len(splitPath) > 2 and splitPath[2].startswith("series"):
+        elif len(splitPath) > 2 and splitPath[2].startswith(b"series"):
             pass
         else:
             if logger:
