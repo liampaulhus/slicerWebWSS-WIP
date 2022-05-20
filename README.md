@@ -25,7 +25,8 @@ Go to the Servers->WebServer module tp load in the module
 
 Select Start Server to launch the web server. If a private key and certificate are provided in the auth folder the server will automatically start in HTTPS mode and use WSS communication.
 
-At the index page select WebSocket Demo to use the interactive WebSocket ui. a slice must be loaded into slicer. 
+At the index page select WebSocket Demo to use the interactive WebSocket UI. A slice must be loaded into slicer to use this demo. 
+
 There is also a latency tester provided. This can be used to check the latency of the connection by comparing the time in browser to the time in slicer when the request was received. 
 
 Access http://localhost:2016 or https://localhost:2016 with a web browser or alternatively use the static page launchers in the module.
